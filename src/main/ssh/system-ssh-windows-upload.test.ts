@@ -14,19 +14,26 @@
  */
 import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { readFile, rm, stat } from 'node:fs/promises'
+import * as localFiles from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as SystemSshOperationLifecycle from './system-ssh-operation-lifecycle'
 
-const { spawnSystemSshCommandMock, waitForChannelCloseSpy, runProcessMock } = vi.hoisted(() => ({
-  spawnSystemSshCommandMock: vi.fn(),
-  waitForChannelCloseSpy: vi.fn(),
-  runProcessMock: vi.fn()
-}))
+const { spawnSystemSshCommandMock, waitForChannelCloseSpy, runProcessMock, writeFileSpy } =
+  vi.hoisted(() => ({
+    spawnSystemSshCommandMock: vi.fn(),
+    waitForChannelCloseSpy: vi.fn(),
+    runProcessMock: vi.fn(),
+    writeFileSpy: vi.fn()
+  }))
 
+vi.mock('node:fs/promises', async (importActual) => {
+  const actual = await importActual<typeof localFiles>()
+  writeFileSpy.mockImplementation(actual.writeFile)
+  return { ...actual, writeFile: writeFileSpy }
+})
 vi.mock('./system-ssh-command', () => ({
   spawnSystemSshCommand: spawnSystemSshCommandMock
 }))
@@ -123,7 +130,8 @@ const fileMode = (command: RecordedCommand): string | undefined =>
 const putLines = (): string[] =>
   sftpBatches.flatMap((batch) => batch.script.split('\n').filter((line) => line.startsWith('put ')))
 const putDestination = (line: string): string => /put "(?:[^"]*)" "([^"]*)"/.exec(line)?.[1] ?? ''
-const putSource = (line: string): string => /put "([^"]*)"/.exec(line)?.[1] ?? ''
+const putSource = (line: string): string =>
+  /put "((?:\\.|[^"\\])*)"/.exec(line)?.[1]?.replace(/\\([\\"])/g, '$1') ?? ''
 
 /** Makes every sftp batch succeed, recording what it was asked to do. */
 function acceptSftp(): void {
@@ -133,7 +141,7 @@ function acceptSftp(): void {
       sftpBatches.push({ args: spec.args, script })
       // Model the real client: `put` copies the local file, so read it while it still exists.
       for (const line of script.split('\n').filter((entry) => entry.startsWith('put '))) {
-        await readFile(putSource(line))
+        await localFiles.readFile(putSource(line))
       }
       return { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
     }
@@ -180,6 +188,7 @@ function refusePwsh(): void {
 }
 
 beforeEach(() => {
+  writeFileSpy.mockClear()
   commands.length = 0
   sftpBatches.length = 0
   failAtSpawn = -1
@@ -214,7 +223,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   delete process.env.ORCA_SYSTEM_SFTP_PATH
-  await rm(localDir, { recursive: true, force: true })
+  await localFiles.rm(localDir, { recursive: true, force: true })
 })
 
 describe('Windows upload over sftp', () => {
@@ -363,8 +372,8 @@ describe('Windows upload over sftp', () => {
         const path = putSource(line)
         seen.push({
           path,
-          contents: await readFile(path),
-          mode: (await stat(path)).mode & 0o777
+          contents: await localFiles.readFile(path),
+          mode: (await localFiles.stat(path)).mode & 0o777
         })
       }
       return { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
@@ -376,10 +385,12 @@ describe('Windows upload over sftp', () => {
 
     expect(seen).toHaveLength(1)
     expect(seen[0]!.contents.toString()).toBe('1.2.3')
-    // The payload can be repository content and tmpdir is world-readable on every platform, so the
-    // window between write and upload must not be group- or world-readable.
-    expect(seen[0]!.mode).toBe(0o600)
-    await expect(readFile(seen[0]!.path)).rejects.toThrow()
+    expect(writeFileSpy).toHaveBeenCalledWith(seen[0]!.path, Buffer.from('1.2.3'), { mode: 0o600 })
+    // POSIX mode bits are not an ACL assertion on Windows.
+    if (process.platform !== 'win32') {
+      expect(seen[0]!.mode).toBe(0o600)
+    }
+    await expect(localFiles.readFile(seen[0]!.path)).rejects.toThrow()
   })
 
   it('creates upload directories over sftp rather than a PowerShell stdin batch', async () => {
@@ -487,12 +498,20 @@ describe('Windows upload over sftp', () => {
   })
 
   it('does not let a local filename sftp cannot quote become a verdict either', async () => {
-    // POSIX clients allow a newline in a filename, and sftp's batch lexer would read it as the end
-    // of one command and the start of another.
+    // Inject the source because Windows cannot create this valid POSIX filename.
     const awkward = join(localDir, 'two\nlines.js')
-    writeFileSync(awkward, 'x')
-
-    await uploadFileViaSystemSsh(target, awkward, `${remoteRoot}/relay.js`, { hostPlatform })
+    const contents = Buffer.from('x')
+    await writeWindowsRemoteFile(
+      target,
+      `${remoteRoot}/relay.js`,
+      {
+        totalBytes: contents.length,
+        readChunk: (offset, maxBytes) =>
+          Promise.resolve(contents.subarray(offset, offset + maxBytes)),
+        withLocalFile: (send) => send(awkward)
+      },
+      {}
+    )
 
     expect(fileWrites().length).toBeGreaterThan(0)
     expect(getWindowsRemoteWriteCapabilities(target).shouldTry('sftp-subsystem')).toBe(true)
@@ -518,6 +537,7 @@ describe('Windows upload over sftp', () => {
 
 describe('Windows upload on a host with no sftp subsystem', () => {
   beforeEach(() => {
+    writeFileSpy.mockClear()
     refuseSftp()
   })
 
