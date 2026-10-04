@@ -14,19 +14,26 @@
  */
 import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { readFile, rm, stat } from 'node:fs/promises'
+import * as localFiles from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as SystemSshOperationLifecycle from './system-ssh-operation-lifecycle'
 
-const { spawnSystemSshCommandMock, waitForChannelCloseSpy, runProcessMock } = vi.hoisted(() => ({
-  spawnSystemSshCommandMock: vi.fn(),
-  waitForChannelCloseSpy: vi.fn(),
-  runProcessMock: vi.fn()
-}))
+const { spawnSystemSshCommandMock, waitForChannelCloseSpy, runProcessMock, writeFileSpy } =
+  vi.hoisted(() => ({
+    spawnSystemSshCommandMock: vi.fn(),
+    waitForChannelCloseSpy: vi.fn(),
+    runProcessMock: vi.fn(),
+    writeFileSpy: vi.fn()
+  }))
 
+vi.mock('node:fs/promises', async (importActual) => {
+  const actual = await importActual<typeof localFiles>()
+  writeFileSpy.mockImplementation(actual.writeFile)
+  return { ...actual, writeFile: writeFileSpy }
+})
 vi.mock('./system-ssh-command', () => ({
   spawnSystemSshCommand: spawnSystemSshCommandMock
 }))
@@ -51,12 +58,16 @@ import {
   writeBufferViaSystemSsh
 } from './system-ssh-file-binary-transfer'
 import { waitForChannelClose } from './system-ssh-operation-lifecycle'
+import * as windowsFileWrite from './system-ssh-windows-file-write'
 import { getRemoteHostPlatform } from './ssh-remote-platform'
 import {
   clearWindowsRemoteWriteCapabilitiesForTests,
   getWindowsRemoteWriteCapabilities
 } from './system-ssh-windows-write-capabilities'
-import { explainWindowsPowerShellStdinFailure } from './system-ssh-windows-write-strategy'
+import {
+  explainWindowsPowerShellStdinFailure,
+  writeWindowsRemoteFile
+} from './system-ssh-windows-write-strategy'
 import type { SshTarget } from '../../shared/ssh-types'
 
 type FakeChannel = EventEmitter & {
@@ -106,6 +117,8 @@ const sftpBatches: RecordedSftpBatch[] = []
 const commands: RecordedCommand[] = []
 /** Index of the exec that should report a non-zero exit, to model a chunk failing mid-file. */
 let failAtSpawn = -1
+let failedWriteExit = 1
+let failedWriteStderr = ''
 let localDir: string
 
 const fileWrites = (): RecordedCommand[] =>
@@ -117,7 +130,8 @@ const fileMode = (command: RecordedCommand): string | undefined =>
 const putLines = (): string[] =>
   sftpBatches.flatMap((batch) => batch.script.split('\n').filter((line) => line.startsWith('put ')))
 const putDestination = (line: string): string => /put "(?:[^"]*)" "([^"]*)"/.exec(line)?.[1] ?? ''
-const putSource = (line: string): string => /put "([^"]*)"/.exec(line)?.[1] ?? ''
+const putSource = (line: string): string =>
+  /put "((?:\\.|[^"\\])*)"/.exec(line)?.[1]?.replace(/\\([\\"])/g, '$1') ?? ''
 
 /** Makes every sftp batch succeed, recording what it was asked to do. */
 function acceptSftp(): void {
@@ -127,7 +141,7 @@ function acceptSftp(): void {
       sftpBatches.push({ args: spec.args, script })
       // Model the real client: `put` copies the local file, so read it while it still exists.
       for (const line of script.split('\n').filter((entry) => entry.startsWith('put '))) {
-        await readFile(putSource(line))
+        await localFiles.readFile(putSource(line))
       }
       return { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
     }
@@ -174,9 +188,12 @@ function refusePwsh(): void {
 }
 
 beforeEach(() => {
+  writeFileSpy.mockClear()
   commands.length = 0
   sftpBatches.length = 0
   failAtSpawn = -1
+  failedWriteExit = 1
+  failedWriteStderr = ''
   clearWindowsRemoteWriteCapabilitiesForTests()
   waitForChannelCloseSpy.mockClear()
   localDir = mkdtempSync(join(tmpdir(), 'orca-win-upload-'))
@@ -192,16 +209,21 @@ beforeEach(() => {
         executable: command.split(' ')[0] ?? '',
         stdin: channel.written
       })
-      setImmediate(() =>
-        spawnIndex === failAtSpawn ? channel.emit('close', 1, null) : channel.emit('close', 0, null)
-      )
+      setImmediate(() => {
+        if (spawnIndex === failAtSpawn) {
+          channel.stderr.write(failedWriteStderr)
+          channel.emit('close', failedWriteExit, null)
+        } else {
+          channel.emit('close', 0, null)
+        }
+      })
     })
   })
 })
 
 afterEach(async () => {
   delete process.env.ORCA_SYSTEM_SFTP_PATH
-  await rm(localDir, { recursive: true, force: true })
+  await localFiles.rm(localDir, { recursive: true, force: true })
 })
 
 describe('Windows upload over sftp', () => {
@@ -350,8 +372,8 @@ describe('Windows upload over sftp', () => {
         const path = putSource(line)
         seen.push({
           path,
-          contents: await readFile(path),
-          mode: (await stat(path)).mode & 0o777
+          contents: await localFiles.readFile(path),
+          mode: (await localFiles.stat(path)).mode & 0o777
         })
       }
       return { code: 0, signal: null, stdout: '', stderr: '', timedOut: false }
@@ -363,10 +385,12 @@ describe('Windows upload over sftp', () => {
 
     expect(seen).toHaveLength(1)
     expect(seen[0]!.contents.toString()).toBe('1.2.3')
-    // The payload can be repository content and tmpdir is world-readable on every platform, so the
-    // window between write and upload must not be group- or world-readable.
-    expect(seen[0]!.mode).toBe(0o600)
-    await expect(readFile(seen[0]!.path)).rejects.toThrow()
+    expect(writeFileSpy).toHaveBeenCalledWith(seen[0]!.path, Buffer.from('1.2.3'), { mode: 0o600 })
+    // POSIX mode bits are not an ACL assertion on Windows.
+    if (process.platform !== 'win32') {
+      expect(seen[0]!.mode).toBe(0o600)
+    }
+    await expect(localFiles.readFile(seen[0]!.path)).rejects.toThrow()
   })
 
   it('creates upload directories over sftp rather than a PowerShell stdin batch', async () => {
@@ -474,12 +498,20 @@ describe('Windows upload over sftp', () => {
   })
 
   it('does not let a local filename sftp cannot quote become a verdict either', async () => {
-    // POSIX clients allow a newline in a filename, and sftp's batch lexer would read it as the end
-    // of one command and the start of another.
+    // Inject the source because Windows cannot create this valid POSIX filename.
     const awkward = join(localDir, 'two\nlines.js')
-    writeFileSync(awkward, 'x')
-
-    await uploadFileViaSystemSsh(target, awkward, `${remoteRoot}/relay.js`, { hostPlatform })
+    const contents = Buffer.from('x')
+    await writeWindowsRemoteFile(
+      target,
+      `${remoteRoot}/relay.js`,
+      {
+        totalBytes: contents.length,
+        readChunk: (offset, maxBytes) =>
+          Promise.resolve(contents.subarray(offset, offset + maxBytes)),
+        withLocalFile: (send) => send(awkward)
+      },
+      {}
+    )
 
     expect(fileWrites().length).toBeGreaterThan(0)
     expect(getWindowsRemoteWriteCapabilities(target).shouldTry('sftp-subsystem')).toBe(true)
@@ -505,6 +537,7 @@ describe('Windows upload over sftp', () => {
 
 describe('Windows upload on a host with no sftp subsystem', () => {
   beforeEach(() => {
+    writeFileSpy.mockClear()
     refuseSftp()
   })
 
@@ -622,6 +655,229 @@ describe('Windows upload on a host with no sftp subsystem', () => {
 
     expect(fileWrites().length).toBeGreaterThan(0)
     expect(fileWrites().map(writtenPath)).not.toContain(`${remoteRoot}/relay.js`)
+    expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
+  })
+
+  it.each([
+    ['relay.js', 'aabb9009eeff'],
+    ['relay-9009.js', 'aabbccddeeff'],
+    ['relay-CommandNotFoundException.js', 'aabbccddeeff'],
+    ['is not recognized as an internal or external command.js', 'aabbccddeeff']
+  ])('propagates a failed write whose path contains absence-like text: %s', async (file, nonce) => {
+    const remotePath = `${remoteRoot}/${file}`
+    const staging = vi
+      .spyOn(windowsFileWrite, 'makeWindowsStagingPath')
+      .mockImplementation((path) => `${path}${WINDOWS_STAGED_WRITE_SUFFIX}-${nonce}`)
+    writeFileSync(join(localDir, file), Buffer.alloc(WINDOWS_STDIN_WRITE_CHUNK_BYTES * 3))
+    failAtSpawn = 0
+    try {
+      await expect(
+        uploadFileViaSystemSsh(target, join(localDir, file), remotePath, { hostPlatform })
+      ).rejects.toThrow('failed (exit 1)')
+
+      expect(fileWrites().map((write) => write.executable)).toEqual(['pwsh.exe'])
+      expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(true)
+      expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
+    } finally {
+      staging.mockRestore()
+    }
+  })
+
+  it.each([
+    'relay-CommandNotFoundException.js',
+    'is not recognized as an internal or external command.js'
+  ])('propagates a write-denied stderr naming an absence-like filename: %s', async (file) => {
+    const remotePath = `${remoteRoot}/${file}`
+    writeFileSync(join(localDir, file), 'x')
+    failAtSpawn = 0
+    failedWriteStderr = `Access to the path '${remotePath}' is denied.`
+
+    await expect(
+      uploadFileViaSystemSsh(target, join(localDir, file), remotePath, { hostPlatform })
+    ).rejects.toThrow('Access to the path')
+
+    expect(fileWrites().map((write) => write.executable)).toEqual(['pwsh.exe'])
+    expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(true)
+    expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
+  })
+
+  const capturedPowerShellMissingPwsh =
+    "pwsh.exe : The term 'pwsh.exe' is not recognized as the name of a cmdlet, function, script file, or operable program. \r\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.\r\nAt line:1 char:1\r\n+ pwsh.exe -NoProfile -NonInteractive -Command exit\r\n+ ~~~~~~~~\r\n    + CategoryInfo          : ObjectNotFound: (pwsh.exe:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException"
+
+  // Source-derived resource/layout controls; these are not captured localized Windows errors.
+  const sourceDerivedLocalizedMissingPwsh = [
+    'pwsh.exe : La commande est introuvable.',
+    'Vérifiez le nom de la commande.',
+    'À la ligne:1 caractère:1',
+    '+ pwsh.exe -NoProfile -NonInteractive -EncodedCommand JABwAGEAdABoAA== ...',
+    '+ ~~~~~~~~',
+    '    + CategoryInfo : CommandNotFoundException — cible pwsh.exe, type String',
+    '    + FullyQualifiedErrorId : CommandNotFoundException'
+  ].join('\r\n')
+  const sourceDerivedWrappedMissingPwsh = [
+    'pwsh.exe : The term',
+    "'pwsh.exe' is not recognized.",
+    'At line:1 char:1',
+    '+ pwsh.exe -NoProfile ',
+    '-NonInteractive -EncodedCommand ',
+    'JABwAGEAdABoAA== ...',
+    '+ ~~~~~~~~',
+    '    + CategoryInfo : ObjectNotFound: ',
+    '(pwsh.exe:String) [], CommandNotFoundExcept',
+    'ion',
+    '    + FullyQualifiedErrorId : CommandNotFoundExcept',
+    'ion'
+  ].join('\r\n')
+
+  it.each([
+    "'missing-tool.exe' is not recognized as an internal or external command",
+    `Access to the path 'relay.js' is denied.\n${capturedPowerShellMissingPwsh}`,
+    `${capturedPowerShellMissingPwsh}\nAccess to the path 'relay.js' is denied.`,
+    capturedPowerShellMissingPwsh.replaceAll('pwsh.exe', 'missing-tool.exe'),
+    capturedPowerShellMissingPwsh.replace(/.*CategoryInfo.*\r?\n/, ''),
+    capturedPowerShellMissingPwsh.replace('At line:', 'pwsh.exe : Another failure.\r\nAt line:'),
+    capturedPowerShellMissingPwsh.replace('At line:', 'another.exe : Another failure.\r\nAt line:'),
+    sourceDerivedLocalizedMissingPwsh.replace('cible pwsh.exe', 'cible relay-pwsh.exe.js'),
+    sourceDerivedLocalizedMissingPwsh.replace('cible pwsh.exe', 'cible C:\\bin\\pwsh.exe'),
+    sourceDerivedLocalizedMissingPwsh.replace('cible pwsh.exe', 'cible pwsh.exe-backup'),
+    sourceDerivedLocalizedMissingPwsh.replace('type String', 'type FileInfo'),
+    sourceDerivedWrappedMissingPwsh.replace('+ pwsh.exe', '+ missing-tool.exe'),
+    `${sourceDerivedWrappedMissingPwsh}\n${capturedPowerShellMissingPwsh}`,
+    `${sourceDerivedLocalizedMissingPwsh}\nAccess to the path 'relay.js' is denied.`,
+    `Access to the path 'relay.js' is denied.\n${sourceDerivedLocalizedMissingPwsh}`,
+    'CommandNotFoundException: missing-tool.exe',
+    "Access to the path 'relay.js' is denied.\nCommandNotFoundException: pwsh.exe",
+    "Access to the path 'relay.js' is denied.\n'pwsh.exe' is not recognized as an internal or external command"
+  ])(
+    'does not mark PowerShell 7 absent when its script reports another missing command: %s',
+    async (stderr) => {
+      writeFileSync(join(localDir, 'relay.js'), 'x')
+      failAtSpawn = 0
+      failedWriteStderr = stderr
+
+      await expect(
+        uploadFileViaSystemSsh(target, join(localDir, 'relay.js'), `${remoteRoot}/relay.js`, {
+          hostPlatform
+        })
+      ).rejects.toThrow('failed (exit 1)')
+
+      expect(fileWrites().map((write) => write.executable)).toEqual(['pwsh.exe'])
+      expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(true)
+      expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
+    }
+  )
+
+  it.each([
+    [9009, ''],
+    [1, "'pwsh.exe' is not recognized as an internal or external command"],
+    [1, 'CommandNotFoundException: pwsh.exe'],
+    [
+      1,
+      "'pwsh.exe' is not recognized as an internal or external command,\r\noperable program or batch file."
+    ],
+    [1, capturedPowerShellMissingPwsh]
+  ])('falls back on an actual missing PowerShell 7 signal: %s %s', async (exit, stderr) => {
+    writeFileSync(join(localDir, 'relay.js'), Buffer.alloc(WINDOWS_STDIN_WRITE_CHUNK_BYTES * 3))
+    failAtSpawn = 0
+    failedWriteExit = exit
+    failedWriteStderr = stderr
+
+    await uploadFileViaSystemSsh(target, join(localDir, 'relay.js'), `${remoteRoot}/relay.js`, {
+      hostPlatform
+    })
+
+    expect(fileWrites().map((write) => write.executable)).toEqual([
+      'pwsh.exe',
+      'powershell.exe',
+      'powershell.exe',
+      'powershell.exe'
+    ])
+    expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(false)
+    expect(commands.some((command) => command.script.includes('::Move('))).toBe(true)
+  })
+
+  it.each([
+    sourceDerivedLocalizedMissingPwsh,
+    sourceDerivedWrappedMissingPwsh,
+    sourceDerivedLocalizedMissingPwsh.replace(' -NonInteractive', '\r\n -NonInteractive')
+  ])(
+    'falls back on a source-derived localized or wrapped missing-pwsh record: %s',
+    async (stderr) => {
+      writeFileSync(join(localDir, 'relay.js'), 'x')
+      failAtSpawn = 0
+      failedWriteStderr = stderr
+
+      await uploadFileViaSystemSsh(target, join(localDir, 'relay.js'), `${remoteRoot}/relay.js`, {
+        hostPlatform
+      })
+
+      expect(fileWrites().map((write) => write.executable)).toEqual(['pwsh.exe', 'powershell.exe'])
+      expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(false)
+      expect(commands.some((command) => command.script.includes('::Move('))).toBe(true)
+    }
+  )
+
+  it.each([
+    'relay-CommandNotFoundException.js',
+    'is not recognized as an internal or external command.js'
+  ])('propagates a timeout whose filename resembles a missing command: %s', async (file) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const remotePath = `${remoteRoot}/${file}`
+    writeFileSync(join(localDir, file), 'x')
+    let noteWriteStarted: () => void = () => {}
+    const writeStarted = new Promise<void>((resolve) => {
+      noteWriteStarted = resolve
+    })
+    spawnSystemSshCommandMock.mockImplementation((_target: SshTarget, command: string) => {
+      const executable = command.split(' ')[0] ?? ''
+      return createFakeChannel((channel) => {
+        commands.push({
+          script: decodePowerShellCommand(command),
+          executable,
+          stdin: channel.written
+        })
+        if (executable !== 'pwsh.exe') {
+          setImmediate(() => channel.emit('close', 0, null))
+        } else {
+          noteWriteStarted()
+        }
+      })
+    })
+    try {
+      const result = expect(
+        uploadFileViaSystemSsh(target, join(localDir, file), remotePath, { hostPlatform })
+      ).rejects.toThrow('timed out')
+      await writeStarted
+      await vi.advanceTimersByTimeAsync(WINDOWS_STDIN_WRITE_TIMEOUT_MS + 1)
+      await result
+
+      expect(fileWrites().map((write) => write.executable)).toEqual(['pwsh.exe'])
+      expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(true)
+      expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    'relay-CommandNotFoundException.js',
+    'is not recognized as an internal or external command.js'
+  ])('propagates a short source whose filename resembles a missing command: %s', async (file) => {
+    await expect(
+      writeWindowsRemoteFile(
+        target,
+        `${remoteRoot}/${file}`,
+        {
+          totalBytes: 1,
+          readChunk: async () => Buffer.alloc(0),
+          withLocalFile: async (send) => send(join(localDir, file))
+        },
+        {}
+      )
+    ).rejects.toThrow('Source ran short')
+
+    expect(fileWrites()).toHaveLength(0)
+    expect(getWindowsRemoteWriteCapabilities(target).shouldTry('pwsh')).toBe(true)
     expect(commands.some((command) => command.script.includes('::Move('))).toBe(false)
   })
 })
