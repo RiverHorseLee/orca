@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "trusted": false,
+  "name": "Custom",
+  "pythonPath": "",
+  "scriptPath": "",
+  "pollSeconds": 60,
+  "timeoutMs": 5000,
+  "staleAfterSeconds": 180
+}

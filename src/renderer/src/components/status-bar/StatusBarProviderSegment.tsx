@@ -20,7 +20,7 @@ import { formatUsagePercentageLabel } from './usage-percentage-label'
 import { translate } from '@/i18n/i18n'
 import { isCursorUsageBucket } from '../../../../shared/cursor-usage-buckets'
 
-function MiniBar({
+export function MiniBar({
   usedPct,
   display
 }: {
@@ -91,14 +91,20 @@ export function getUsageTone(p: ProviderRateLimits): UsageTone {
  * Stands in for usage chips a narrow bar can't fit. Always rendered at the collapsing
  * density so its width is known before anything collapses; out of the row while empty.
  */
+type AdditionalHiddenUsage = { label: string; tone: 'normal' | 'warning' | 'urgent' }
+const NO_ADDITIONAL_HIDDEN_USAGE: readonly AdditionalHiddenUsage[] = []
+
 export function UsageOverflowChip({
   hidden,
-  display
+  display,
+  additionalHidden = NO_ADDITIONAL_HIDDEN_USAGE
 }: {
   hidden: readonly ProviderRateLimits[]
   display: UsagePercentageDisplay
+  additionalHidden?: readonly AdditionalHiddenUsage[]
 }): React.JSX.Element {
-  const tones = hidden.map(getUsageTone)
+  const tones = [...hidden.map(getUsageTone), ...additionalHidden.map((entry) => entry.tone)]
+  const count = hidden.length + additionalHidden.length
   const tone = tones.includes('urgent')
     ? 'urgent'
     : tones.includes('warning')
@@ -112,13 +118,14 @@ export function UsageOverflowChip({
         ? `${name} ${formatUsagePercentageLabel(tightest.window.usedPercent, display)}`
         : name
     })
+    .concat(additionalHidden.map((entry) => entry.label))
     .join(', ')
   return (
     <span
       data-usage-more
-      data-usage-collapsed={hidden.length === 0}
+      data-usage-collapsed={count === 0}
       data-tone={tone}
-      aria-hidden={hidden.length === 0}
+      aria-hidden={count === 0}
       title={translate(
         'auto.components.status.bar.StatusBar.hiddenUsageProviders',
         'Also: {{value0}}',
@@ -128,7 +135,7 @@ export function UsageOverflowChip({
       )}
       className="inline-flex h-4 items-center rounded-full border border-border px-1.5 text-[11px] font-medium tabular-nums text-foreground data-[tone=urgent]:border-destructive/40 data-[tone=urgent]:text-destructive data-[tone=warning]:border-status-warning-border data-[tone=warning]:text-status-warning data-[usage-collapsed=true]:invisible data-[usage-collapsed=true]:absolute"
     >
-      +{Math.max(1, hidden.length)}
+      +{Math.max(1, count)}
     </span>
   )
 }

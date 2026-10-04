@@ -1,3 +1,4 @@
+import { installCustomUsageBridge } from './custom-usage-bridge'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { PreloadApi } from './api-types'
 import {
@@ -198,3 +199,5 @@ if (process.contextIsolated) {
 } else {
   window.api = api
 }
+
+installCustomUsageBridge()

@@ -25,7 +25,6 @@ import {
   getAccountsLocationSearchEntries,
   getAccountsMiniMaxSearchEntries,
   getAccountsOpencodeSearchEntries,
-  getAccountsPaneSearchEntries,
   getAccountsZcodePlanSearchEntries
 } from './accounts-search'
 import { getRemoteAccountsPaneScope } from './provider-account-scope'
@@ -67,6 +66,11 @@ import {
 } from './accounts-pane-provider-setting-sections'
 import { renderMiniMaxAccountsSection } from './accounts-pane-minimax-section'
 import { ManagedDataAccountsSection } from './ManagedDataAccountsSection'
+import { CustomUsageAccountsSection } from '../custom-usage/CustomUsageAccountsSection'
+import {
+  getCustomUsageSearchEntries,
+  getAccountsPaneSearchEntries
+} from '../custom-usage/custom-usage-settings-search'
 import { renderAccountsRemovalDialogs } from './accounts-pane-removal-dialogs'
 
 export { getAccountsPaneSearchEntries }
@@ -376,6 +380,9 @@ export function AccountsPane({
     clearMiniMaxCookie
   }
   const visibleSections = [
+    matchesSettingsSearch(searchQuery, getCustomUsageSearchEntries()) ? (
+      <CustomUsageAccountsSection key="custom" />
+    ) : null,
     !searchQuery || /opencode|devin|account/i.test(searchQuery) ? (
       <div key={settings.activeRuntimeEnvironmentId ?? 'local'} className="space-y-8">
         <ManagedDataAccountsSection provider="opencode" target={getActiveRuntimeTarget(settings)} />

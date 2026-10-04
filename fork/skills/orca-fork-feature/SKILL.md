@@ -31,9 +31,9 @@ Prefer additive domain modules plus thin integration points. Do not duplicate a 
 
 For custom usage, percentage, quota, HTTP usage endpoints or Python adapters, read `fork/plans/custom-usage.md` first.
 
-Keep the renderer presentation-only. The proposed boundary is external Python adapter → versioned JSON over loopback HTTP → desktop-local typed reader → small UI segment. Provider secrets, response mapping and quota computation remain outside Orca. Do not disguise account snapshots as Claude/Codex session usage or extend every hard-coded provider union.
+Keep the renderer presentation-only. The current boundary is a user-selected, explicitly trusted Python script → versioned JSON on stdout → desktop-local typed reader → the existing lower-left Usage roster. Configuration belongs in AI Provider Accounts > Custom. Reuse runProcess for hidden execution, cancellation and bounded output; do not restore the superseded standalone HTTP service or right-side widget. Provider secrets and response mapping remain in the script, not in Claude/Codex session usage.
 
-This is a design until explicitly implemented. Recheck actual extension points before each milestone; if upstream gains a suitable stable extension, prefer it over the planned integration.
+The script/roster workflow is implemented. Recheck actual extension points before expanding it; prefer a suitable stable upstream extension if one becomes available, rather than widening every hard-coded provider union.
 
 ## Implementation and verification
 

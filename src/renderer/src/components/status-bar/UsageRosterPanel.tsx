@@ -213,8 +213,10 @@ export function UsageRosterPanel({
   canSignIn,
   onManageAccounts,
   onUsageDetails,
-  renderRow
+  renderRow,
+  additionalRows
 }: {
+  additionalRows?: React.ReactNode
   providers: ProviderRateLimits[]
   display: UsagePercentageDisplay
   statusBarUsageMode: StatusBarUsageMode
@@ -338,6 +340,7 @@ export function UsageRosterPanel({
           </DropdownMenuItem>
         )
       })}
+      {additionalRows}
       <div className="border-t border-border/70" />
       <DropdownMenuItem
         onSelect={onUsageDetails}

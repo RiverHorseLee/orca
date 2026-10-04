@@ -1,5 +1,6 @@
 import { app, type Event } from 'electron'
 import { closeAllWatchers } from '../ipc/filesystem-watcher'
+import { stopCustomUsage } from '../custom-usage/custom-usage-lifecycle'
 import { disposeWorktreeBaseDirectoryWatchers } from '../ipc/worktree-base-directory-watcher'
 import { stopFolderRepoGitUpgradeWatch } from '../ipc/folder-repo-git-upgrade'
 import { killAllPty } from '../ipc/pty'
@@ -137,6 +138,7 @@ function installWillQuitHandler(): void {
     state.pluginKillListService = null
     state.pluginMarketplaceService = null
     state.pluginMarketplaceInstaller = null
+    const customUsageShutdown = stopCustomUsage()
     const pluginHostShutdown = state.pluginService?.dispose() ?? Promise.resolve()
     const codexBackfillRecoveryShutdown = stopCodexStateDbBackfillRecoveries()
     stopCodexAccountSessionBridges()
@@ -257,6 +259,7 @@ function installWillQuitHandler(): void {
     // Losing at most the last debounce interval beats a quit that never completes, and the
     // temp+rename swap means a write cut short by the deadline leaves the old file intact.
     settleTeardownWithinDeadline([
+      { name: 'custom-usage', promise: customUsageShutdown },
       { name: 'daemon', promise: daemonTeardown },
       { name: 'browser', promise: browserShutdown },
       { name: 'runtime-rpc', promise: rpcStopAndClear },

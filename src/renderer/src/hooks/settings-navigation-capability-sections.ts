@@ -1,5 +1,5 @@
 import { LinearIcon } from '@/components/icons/LinearIcon'
-import { getAccountsPaneSearchEntries } from '@/components/settings/accounts-search'
+import { getAccountsPaneSearchEntries } from '@/components/custom-usage/custom-usage-settings-search'
 import { getAgentsPaneSearchEntries } from '@/components/settings/agents-search'
 import { getComputerUsePaneSearchEntries } from '@/components/settings/computer-use-search'
 import { getGeneralPaneSearchEntries } from '@/components/settings/general-search'

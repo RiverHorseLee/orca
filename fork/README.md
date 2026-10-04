@@ -5,8 +5,9 @@
 ## 阅读顺序
 
 1. [开发与同步流程](DEVELOPMENT.md)：分支职责、环境准备、验证和发布边界。
-2. [自定义用量统计方案](plans/custom-usage.md)：HTTP + 可替换 Python 适配器，仅方案，尚未实现。
-3. [验证记录](VALIDATION.md)：实际安装、编译、测试结果和未验证项。
+2. [自定义用量统计方案](plans/custom-usage.md)：左下角统一 Usage、设置中的自定义账户，以及可替换 Python 脚本。
+3. [Python 模板与启用方法](adapters/custom-usage/README.md)：固定样例、设置路径、测试获取、关闭与排查。
+4. [验证记录](VALIDATION.md)：实际安装、编译、测试结果和未验证项。
 
 先遵守仓库根目录的 `AGENTS.md`；本目录只补充 fork 的规则，不覆盖上游约束。
 
@@ -59,7 +60,7 @@ cp -R fork/skills/orca-fork-sync "$skill_home/"
 示例：
 
 ```text
-使用 $orca-fork-feature，按 fork/plans/custom-usage.md 开始 M1，只实现数据契约和测试。
+使用 $orca-fork-feature，把 Python 固定样例换成真实接口采集，保持现有数据契约和 Orca 主体不变。
 使用 $orca-fork-sync，检查上游差异并完成本地同步；先不要推送。
 ```
 

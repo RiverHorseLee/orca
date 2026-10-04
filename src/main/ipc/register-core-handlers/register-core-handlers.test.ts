@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../../custom-usage/custom-usage-ipc', () => ({ registerCustomUsageHandlers: vi.fn() }))
+
 const {
   getPathMock,
   listEnvironmentsMock,

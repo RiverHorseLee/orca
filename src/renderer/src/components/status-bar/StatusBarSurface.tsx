@@ -20,6 +20,15 @@ import { UpdateStatusSegment } from './UpdateStatusSegment'
 import { SkillUpdateStatusSegment } from './SkillUpdateStatusSegment'
 import { NativeChatResumeStatusSegment } from './NativeChatResumeStatusSegment'
 import { CaffeinateStatusSegment } from './CaffeinateStatusSegment'
+import { useCustomUsage } from '../custom-usage/use-custom-usage'
+import {
+  CustomUsageChip,
+  CustomUsageRosterRow,
+  CUSTOM_USAGE_CHIP_ID,
+  customUsageName,
+  customUsageUrgent
+} from '../custom-usage/CustomUsageRoster'
+import { openCustomUsageSettings } from '../custom-usage/custom-usage-navigation'
 import { RemoteServerUpdateStatusSegment } from './RemoteServerUpdateStatusSegment'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
 import { FloatingTerminalIconContextMenu } from '@/components/floating-terminal/FloatingTerminalIconContextMenu'
@@ -54,12 +63,13 @@ export function StatusBarSurface({
   floatingTerminalOpen
 }: StatusBarProps): React.JSX.Element | null {
   const controller = useStatusBarController(floatingTerminalOpen)
+  const custom = useCustomUsage(controller !== null)
   if (!controller) {
     return null
   }
   const {
     anyFetching,
-    anyVisible,
+    anyVisible: builtinVisible,
     barRef,
     collapseUsage,
     collapsedUsageProviders,
@@ -68,12 +78,12 @@ export function StatusBarSurface({
     floatingTerminalShortcut,
     handleManageAccounts,
     handleOpenProviderAccounts,
-    handleRefresh,
+    handleRefresh: refreshBuiltins,
     handleUsageDetails,
     handleUsageMenuOpenChange,
-    hasVisibleUsageMeters,
-    isEmptyUsageState,
-    isRefreshing,
+    hasVisibleUsageMeters: builtinMeters,
+    isEmptyUsageState: builtinEmpty,
+    isRefreshing: builtinRefreshing,
     overflowing,
     petEnabled,
     rosterProviders,
@@ -95,6 +105,19 @@ export function StatusBarSurface({
     usageRef,
     usageTightestOnly
   } = controller
+  const customState = custom.state?.status === 'disabled' ? null : custom.state
+  const hasVisibleUsageMeters = builtinMeters || customState !== null
+  const anyVisible = builtinVisible || customState !== null
+  const isEmptyUsageState = builtinEmpty && customState === null
+  const isRefreshing = builtinRefreshing || customState?.isRefreshing === true
+  const customCollapsed = collapsedUsageProviders.includes(CUSTOM_USAGE_CHIP_ID)
+  const handleRefresh = (): void => {
+    void Promise.all([refreshBuiltins(), custom.refresh()])
+  }
+  const configureCustom = (): void => {
+    handleUsageMenuOpenChange(false)
+    openCustomUsageSettings()
+  }
 
   return (
     <div
@@ -158,8 +181,27 @@ export function StatusBarSurface({
                         />
                       </span>
                     ))}
+                    {customState ? (
+                      <CustomUsageChip
+                        state={customState}
+                        display={usagePercentageDisplay}
+                        compact={compact}
+                        mode={usageTightestOnly ? 'compact' : statusBarUsageMode}
+                        collapsed={customCollapsed}
+                      />
+                    ) : null}
                     {collapseUsage ? (
                       <UsageOverflowChip
+                        additionalHidden={
+                          customState && customCollapsed
+                            ? [
+                                {
+                                  label: customUsageName(customState),
+                                  tone: customUsageUrgent(customState) ? 'urgent' : 'normal'
+                                }
+                              ]
+                            : []
+                        }
                         hidden={rosterProviders.filter((p) =>
                           collapsedUsageProviders.includes(p.provider)
                         )}
@@ -182,6 +224,16 @@ export function StatusBarSurface({
                 >
                   <UsageRosterPanel
                     providers={rosterProviders}
+                    additionalRows={
+                      customState ? (
+                        <CustomUsageRosterRow
+                          state={customState}
+                          display={usagePercentageDisplay}
+                          mode={statusBarUsageMode}
+                          onConfigure={configureCustom}
+                        />
+                      ) : null
+                    }
                     display={usagePercentageDisplay}
                     statusBarUsageMode={statusBarUsageMode}
                     onStatusBarUsageModeChange={setStatusBarUsageMode}
