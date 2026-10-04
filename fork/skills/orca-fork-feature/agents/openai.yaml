@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Orca Fork 新功能开发'
+  short_description: '规划并开发 Orca 定制功能，保持小改动和可验证的上游兼容性'
+  default_prompt: '使用 $orca-fork-feature 为当前 Orca fork 规划并开发新功能，先检查复用点和最小改动范围。'
