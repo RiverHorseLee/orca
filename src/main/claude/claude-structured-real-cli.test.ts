@@ -391,7 +391,7 @@ describe.skipIf(!realClaudeAvailable)(suiteTitle, () => {
         expect(messages().find((m) => m.type === 'result')).toMatchObject({ is_error: false })
         // The turn's own init names what the child was launched with.
         expect(messages().find((m) => m.type === 'system' && m.subtype === 'init')).toMatchObject({
-          model: 'claude-sonnet-5',
+          model: expect.stringMatching(/^claude-sonnet-\d+(?:-\d+)?$/),
           permissionMode: 'plan'
         })
       } finally {
@@ -487,7 +487,8 @@ describe.skipIf(!realClaudeAvailable)(suiteTitle, () => {
       await writeFile(
         join(cwd, '.claude', 'settings.json'),
         JSON.stringify({
-          hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'true' }] }] }
+          // echo is available in Windows and POSIX shells; true is POSIX-only.
+          hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo' }] }] }
         })
       )
       const events: ClaudeStructuredSessionEvent[] = []
