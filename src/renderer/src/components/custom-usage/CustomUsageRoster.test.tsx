@@ -22,6 +22,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { customUsageMetricLabel } from './custom-usage-display'
 import { useCustomUsage } from './use-custom-usage'
 
 vi.mock('@/i18n/i18n', () => ({
@@ -80,6 +81,60 @@ describe('shared Usage roster contribution', () => {
     expect(html).toContain(`data-usage-chip="${CUSTOM_USAGE_CHIP_ID}"`)
     expect(html).not.toContain('<button')
     expect(html).not.toContain('data-slot="popover')
+  })
+  it('keeps both percentage and amount in the inline chip', () => {
+    const state: CustomUsageState = {
+      ...ready(),
+      snapshot: {
+        ...customUsageFixture(),
+        metrics: [
+          { id: 'gateway-percent', label: 'Gateway usage', kind: 'percentage', usedPercent: 61 },
+          { id: 'gateway-cost', label: 'Weekly cost', kind: 'amount', value: 847.89, unit: 'CNY' }
+        ]
+      }
+    }
+    const html = renderToStaticMarkup(
+      <CustomUsageChip
+        state={state}
+        display="used"
+        mode="verbose"
+        compact={false}
+        collapsed={false}
+      />
+    )
+    expect(html).toContain('61% used · ￥847.89')
+    expect(html).toContain('data-usage-bar')
+    expect(html).toContain('aria-label="Custom account · 61% used · ￥847.89"')
+
+    const compact = renderToStaticMarkup(
+      <CustomUsageChip state={state} display="used" mode="compact" compact collapsed={false} />
+    )
+    expect(compact).toContain('61% used · ￥847.89')
+    expect(compact).not.toContain('data-usage-bar')
+    const detailed = renderToStaticMarkup(<CustomUsageMetrics state={state} display="used" />)
+    expect(detailed).toContain('Weekly cost')
+    expect(detailed).toContain('￥847.89')
+  })
+  it('uses a yen prefix for CNY quota values without changing other units', () => {
+    expect(
+      customUsageMetricLabel({
+        id: 'week',
+        label: 'Week',
+        kind: 'quota',
+        used: 42.5,
+        limit: 100,
+        unit: 'CNY'
+      })
+    ).toBe('￥42.5 / ￥100')
+    expect(
+      customUsageMetricLabel({
+        id: 'total',
+        label: 'Tokens',
+        kind: 'amount',
+        value: 500,
+        unit: 'tokens'
+      })
+    ).toBe('500 tokens')
   })
   it('includes custom entries in the existing collapsed +N indicator', () => {
     const html = renderToStaticMarkup(

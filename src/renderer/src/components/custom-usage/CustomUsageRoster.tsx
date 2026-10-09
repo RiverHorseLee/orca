@@ -42,6 +42,10 @@ export function CustomUsageChip({
   const metric = state.snapshot?.metrics[0]
   const percent = metric ? customUsagePercent(metric) : undefined
   const summary = metric ? customUsageSummary(metric, display) : customUsageStatusLabel(state)
+  const amount = state.snapshot?.metrics.find(
+    (entry) => entry.kind === 'amount' && entry !== metric
+  )
+  const chipSummary = amount ? `${summary} · ${customUsageMetricLabel(amount)}` : summary
   return (
     <span
       data-usage-chip={CUSTOM_USAGE_CHIP_ID}
@@ -60,10 +64,10 @@ export function CustomUsageChip({
         <MiniBar usedPct={percent} display={display} />
       ) : null}
       <span
-        className="max-w-40 truncate tabular-nums"
-        aria-label={`${customUsageName(state)} · ${summary}`}
+        className="max-w-56 truncate tabular-nums"
+        aria-label={`${customUsageName(state)} · ${chipSummary}`}
       >
-        {summary}
+        {chipSummary}
       </span>
     </span>
   )

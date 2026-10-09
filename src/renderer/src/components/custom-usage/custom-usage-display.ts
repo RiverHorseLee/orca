@@ -15,9 +15,12 @@ export function customUsageMetricLabel(metric: CustomUsageMetric): string {
     return `${numberFormat.format(metric.usedPercent)}%`
   }
   if (metric.kind === 'quota') {
-    return `${numberFormat.format(metric.used)} / ${numberFormat.format(metric.limit)} ${metric.unit}`
+    const used = numberFormat.format(metric.used)
+    const limit = numberFormat.format(metric.limit)
+    return metric.unit === 'CNY' ? `￥${used} / ￥${limit}` : `${used} / ${limit} ${metric.unit}`
   }
-  return `${numberFormat.format(metric.value)} ${metric.unit}`
+  const value = numberFormat.format(metric.value)
+  return metric.unit === 'CNY' ? `￥${value}` : `${value} ${metric.unit}`
 }
 export function customUsagePercent(metric: CustomUsageMetric): number | undefined {
   if (metric.kind === 'amount') {
