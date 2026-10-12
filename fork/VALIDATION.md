@@ -2,7 +2,7 @@
 
 > 2026-10-08 本地同步和完整编译已验证，详见 [上游基线记录](sync/2026-10-08-upstream.md) 与 [自定义功能集成记录](sync/2026-10-08-custom-usage.md)。本页其余内容保留各阶段当时的验证事实，不能代替最新集成记录。
 
-> 2026-10-12 local upstream baseline integration was validated; see [October 12 upstream sync](sync/2026-10-12-upstream.md) and the feature integration record. Older sections describe their original validation only.
+> 2026-10-12 local upstream baseline and Custom Usage integration passed targeted verification and Windows packaging; see [upstream baseline](sync/2026-10-12-upstream.md) and [Custom Usage integration](sync/2026-10-12-custom-usage.md). No desktop UI or real SSH/mobile runtime acceptance was performed. Older sections retain historical context.
 
 日期：2026-10-04（Asia/Shanghai）。本记录描述本次实际检查，不宣称将来仍是最新上游。
 
