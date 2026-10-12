@@ -19,3 +19,11 @@
 ## Publication
 
 Only local branches were advanced under this request; no push to origin or upstream, no release publication and no install. Git-private logs include `.git/fork-sync-20261012-feature-{final-tests,final-quality,final-build}.log` and `.git/fork-sync-20261012-win-package.log`. Private Gateway script `C:/Users/lijuntao/.orca/custom_usage_gateway.py` remains outside this repository.
+
+## Final upstream snapshot integration
+
+- After the first 9.0.3 package, upstream advanced to two further commits. The final verified main is `6be60909c71ebaa7e1c498cdcf997ad106b71dc0`; see [final upstream snapshot](2026-10-12-upstream.md). This supersedes the first snapshot `f8daed0d986a` for this task; the earlier 9.0.3 artifact is **not** the final snapshot build.
+- New `sync/custom-usage-20261012-6be60909` branched from the prior validated feature tip `4d70390c5b122458145d34be81256615e14bd997`, then merged the newly validated develop `84cd76db5c2807215f74757883b64c317e9ca494` without conflicts; genuine merge commit: `f4136248e82a584fa13954e9c53923bc3c0799d0`. Prior feature/Status Bar conflict resolution remains intact.
+- Final combination: 14 relevant test files, **187 passed, 0 skipped** (real Python isolated fixture enabled). `ORCA_CODE_QUALITY_BASE=main pnpm run check:code-quality:changed` passed with zero new findings across 43 files; `pnpm build` passed including Windows native launcher.
+- Final Windows x64 NSIS package, locally numbered `9.0.4` through `ORCA_LOCAL_BUILD_VERSION` without a tracked manifest edit: `dist/custom-usage-9.0.4/orca-custom-usage-9.0.4-setup.exe`, 190.8 MiB, SHA-256 `25F5F9E4DF24132CA66DA34E2E8C61CD85ABB74A2E2EA6E2D6B10860029AEC19`. PE/CLI/app.asar/manifest versions were checked and are 9.0.4; no nested dist artifacts. **Unsigned** and optional orcad deployment template is not bundled. `--publish never`; not installed or launched.
+- Final ignored logs: `.git/fork-sync-20261012-final-{feature-merge,feature-tests,feature-quality,feature-build,win-package}.log`. No current user's Gateway secrets were added to Git and no live daemon/agent sessions were interrupted. UI CDP, production SSH/mobile, multi-platform, full upstream suite and real credentialed CLI still need separate acceptance. Local-only branch moves; no automatic origin push.
