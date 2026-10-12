@@ -136,6 +136,39 @@ describe('shared Usage roster contribution', () => {
       })
     ).toBe('500 tokens')
   })
+  it('marks percentage chips for upstream density and reserves room for all providers', () => {
+    const percentage = renderToStaticMarkup(
+      <CustomUsageChip
+        state={ready()}
+        display="used"
+        mode="verbose"
+        compact={false}
+        collapsed={false}
+      />
+    )
+    expect(percentage).toContain('data-usage-percentage="true"')
+    const amountOnly: CustomUsageState = {
+      ...ready(),
+      snapshot: {
+        ...customUsageFixture(),
+        metrics: [{ id: 'cost', label: 'Week', kind: 'amount', value: 42.5, unit: 'CNY' }]
+      }
+    }
+    const amount = renderToStaticMarkup(
+      <CustomUsageChip state={amountOnly} display="used" mode="compact" compact collapsed={false} />
+    )
+    expect(amount).toContain('data-usage-percentage="false"')
+    const overflow = renderToStaticMarkup(
+      <UsageOverflowChip
+        hidden={[]}
+        providerCount={2}
+        display="used"
+        additionalHidden={[{ label: 'Custom account', tone: 'urgent' }]}
+      />
+    )
+    expect(overflow).toContain('>+2</span>')
+    expect(overflow).toContain('>+1</span>')
+  })
   it('includes custom entries in the existing collapsed +N indicator', () => {
     const html = renderToStaticMarkup(
       <UsageOverflowChip
