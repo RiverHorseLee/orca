@@ -1,5 +1,7 @@
 # 初始化验证记录
 
+> 2026-10-12 local upstream baseline integration was validated; see [October 12 upstream sync](sync/2026-10-12-upstream.md) and the feature integration record. Older sections describe their original validation only.
+
 日期：2026-10-04（Asia/Shanghai）。本记录描述本次实际检查，不宣称将来仍是最新上游。
 
 ## Git 和改动范围
