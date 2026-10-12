@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultCustomUsageSettings } from '../../shared/custom-usage-settings'
 import { customUsageFixture } from '../../shared/custom-usage-test-fixture'
-import type { ProcessResult } from '../../shared/child-process/run-process'
+import type { ProcessResult } from '@orca/process-host/process-spec'
 import { CustomUsageScriptRunner, runCustomUsageScript } from './custom-usage-script'
 
 const directories: string[] = []

@@ -50,6 +50,7 @@ export function CustomUsageChip({
     <span
       data-usage-chip={CUSTOM_USAGE_CHIP_ID}
       data-usage-urgent={customUsageUrgent(state)}
+      data-usage-percentage={percent !== undefined}
       data-usage-collapsed={collapsed}
       aria-hidden={collapsed}
       className="inline-flex items-center gap-1.5 data-[usage-collapsed=true]:invisible data-[usage-collapsed=true]:absolute"

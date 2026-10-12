@@ -140,6 +140,7 @@ describe('shared Usage roster contribution', () => {
     const html = renderToStaticMarkup(
       <UsageOverflowChip
         hidden={[]}
+        providerCount={1}
         display="used"
         additionalHidden={[{ label: 'Custom account', tone: 'urgent' }]}
       />
@@ -147,6 +148,7 @@ describe('shared Usage roster contribution', () => {
     expect(html).toContain('+1')
     expect(html).toContain('data-tone="urgent"')
     expect(html).toContain('data-usage-collapsed="false"')
+    expect(html).toContain('>+1</span>')
   })
   it('uses remaining bars but retains explicit consumed amounts and plain counters', () => {
     const html = renderToStaticMarkup(<CustomUsageMetrics state={ready()} display="remaining" />)

@@ -3,8 +3,8 @@ import { closeAllWatchers } from '../ipc/filesystem-watcher'
 import { stopCustomUsage } from '../custom-usage/custom-usage-lifecycle'
 import { disposeWorktreeBaseDirectoryWatchers } from '../ipc/worktree-base-directory-watcher'
 import { stopFolderRepoGitUpgradeWatch } from '../ipc/folder-repo-git-upgrade'
-import { killAllPty } from '../ipc/pty'
-import { disconnectDaemon, shutdownDaemon } from '../daemon/daemon-init'
+import { killAllPty } from '../ipc/pty/kill-all'
+import { disconnectDaemon, shutdownDaemon } from '../daemon/daemon-provider-state'
 import { beginSshShutdown } from '../ipc/ssh-shutdown-drain'
 import { agentHookServer } from '../agent-hooks/server'
 import { wslHookRelayManager } from '../agent-hooks/wsl-hook-relay-manager'
@@ -160,7 +160,9 @@ function installWillQuitHandler(): void {
     state.uninstallRepoMaintenanceIdleGate = null
     // Why stop, not wait: a delete can run for minutes, and its record makes the next start finish it.
     stopBackgroundWorktreeRemovals()
-    agentHookServer.stop()
+    // Why keepStatus: the chat teardown above reads each chat's background work from that store
+    // after this returns; cleared, a chat whose only work was a subagent or command is not offered.
+    agentHookServer.stop({ keepStatus: true })
     // Why Windows only: POSIX hooks short-circuit on ORCA_PANE_KEY, while Windows must register a
     // bare script path that cannot express the guard and would otherwise keep spawning after quit.
     // Why bounded here: every other teardown member carries its own ceiling, and this one reaches

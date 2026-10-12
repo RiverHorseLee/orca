@@ -1,9 +1,6 @@
 import { dirname } from 'node:path'
-import {
-  runProcess,
-  type ProcessResult,
-  type ProcessSpec
-} from '../../shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
+import type { ProcessResult, ProcessSpec } from '@orca/process-host/process-spec'
 import {
   CUSTOM_USAGE_MAX_BYTES,
   customUsageSnapshotSchema,
